@@ -1,0 +1,352 @@
+{
+  "datasets": [
+    {
+      "name": "income_inequality",
+      "displayName": "Income Inequality Data",
+      "queryLines": [
+        "WITH raw_data AS (\n",
+        "  SELECT\n",
+        "    *\n",
+        "  FROM\n",
+        "    read_files(\n",
+        "      '/Workspace/Users/szczerski@gmail.com/mean-median-eurostat/eurostat_mean-median_2026.csv',\n",
+        "      format => 'csv',\n",
+        "      header => true,\n",
+        "      inferSchema => true\n",
+        "    )\n",
+        "  WHERE\n",
+        "    TIME_PERIOD = 2022\n",
+        "    AND nace_r2 = 'B-S_X_O'\n",
+        "),\n",
+        "pivoted AS (\n",
+        "  SELECT\n",
+        "    geo AS Kod_Kraju,\n",
+        "    MAX(\n",
+        "      CASE\n",
+        "        WHEN indic_se = 'MEAN_E_EUR' THEN OBS_VALUE\n",
+        "      END\n",
+        "    ) AS Srednia,\n",
+        "    MAX(\n",
+        "      CASE\n",
+        "        WHEN indic_se = 'MED_E_EUR' THEN OBS_VALUE\n",
+        "      END\n",
+        "    ) AS Mediana\n",
+        "  FROM\n",
+        "    raw_data\n",
+        "  GROUP BY\n",
+        "    geo\n",
+        "),\n",
+        "with_country_names AS (\n",
+        "  SELECT\n",
+        "    Kod_Kraju,\n",
+        "    Srednia,\n",
+        "    Mediana,\n",
+        "    CASE Kod_Kraju\n",
+        "      WHEN 'AT' THEN 'Austria'\n",
+        "      WHEN 'BE' THEN 'Belgium'\n",
+        "      WHEN 'BG' THEN 'Bulgaria'\n",
+        "      WHEN 'HR' THEN 'Croatia'\n",
+        "      WHEN 'CY' THEN 'Cyprus'\n",
+        "      WHEN 'CZ' THEN 'Czechia'\n",
+        "      WHEN 'DK' THEN 'Denmark'\n",
+        "      WHEN 'EE' THEN 'Estonia'\n",
+        "      WHEN 'FI' THEN 'Finland'\n",
+        "      WHEN 'FR' THEN 'France'\n",
+        "      WHEN 'DE' THEN 'Germany'\n",
+        "      WHEN 'EL' THEN 'Greece'\n",
+        "      WHEN 'HU' THEN 'Hungary'\n",
+        "      WHEN 'IE' THEN 'Ireland'\n",
+        "      WHEN 'IT' THEN 'Italy'\n",
+        "      WHEN 'LV' THEN 'Latvia'\n",
+        "      WHEN 'LT' THEN 'Lithuania'\n",
+        "      WHEN 'LU' THEN 'Luxembourg'\n",
+        "      WHEN 'MT' THEN 'Malta'\n",
+        "      WHEN 'NL' THEN 'Netherlands'\n",
+        "      WHEN 'PL' THEN 'Poland'\n",
+        "      WHEN 'PT' THEN 'Portugal'\n",
+        "      WHEN 'RO' THEN 'Romania'\n",
+        "      WHEN 'SK' THEN 'Slovakia'\n",
+        "      WHEN 'SI' THEN 'Slovenia'\n",
+        "      WHEN 'ES' THEN 'Spain'\n",
+        "      WHEN 'SE' THEN 'Sweden'\n",
+        "      WHEN 'CH' THEN 'Switzerland'\n",
+        "      WHEN 'AL' THEN 'Albania'\n",
+        "      WHEN 'BA' THEN 'Bosnia and Herzegovina'\n",
+        "      WHEN 'IS' THEN 'Iceland'\n",
+        "      WHEN 'MK' THEN 'North Macedonia'\n",
+        "      WHEN 'NO' THEN 'Norway'\n",
+        "      WHEN 'RS' THEN 'Serbia'\n",
+        "    END AS Country_EN,\n",
+        "    ROUND(((Srednia - Mediana) / Srednia) * 100, 2) AS Rozwarstwienie_Pct\n",
+        "  FROM\n",
+        "    pivoted\n",
+        ")\n",
+        "SELECT\n",
+        "  Kod_Kraju,\n",
+        "  Country_EN,\n",
+        "  Srednia,\n",
+        "  Mediana,\n",
+        "  Rozwarstwienie_Pct\n",
+        "FROM\n",
+        "  with_country_names\n",
+        "WHERE\n",
+        "  Srednia IS NOT NULL\n",
+        "  AND Mediana IS NOT NULL\n",
+        "  AND Kod_Kraju NOT IN ('EA19', 'EA20', 'EU27_2020')\n",
+        "ORDER BY\n",
+        "  Rozwarstwienie_Pct DESC"
+      ]
+    },
+    {
+      "name": "b082f979",
+      "displayName": "notebook",
+      "queryLines": [
+        "WITH base_data AS (\n",
+        "  SELECT\n",
+        "    *\n",
+        "  FROM\n",
+        "    dbacademy.default.notebook\n",
+        "),\n",
+        "stats AS (\n",
+        "  SELECT\n",
+        "    MIN(Rozwarstwienie_Pct) AS min_inequality,\n",
+        "    MAX(Rozwarstwienie_Pct) AS max_inequality,\n",
+        "    MIN(Happiness_Score) AS min_happiness,\n",
+        "    MAX(Happiness_Score) AS max_happiness\n",
+        "  FROM\n",
+        "    base_data\n",
+        ")\n",
+        "SELECT\n",
+        "  b.Kod_Kraju,\n",
+        "  b.Rozwarstwienie_Pct,\n",
+        "  b.Happiness_Score,\n",
+        "  -- Min-Max normalization (0-1) for Rozwarstwienie_Pct\n",
+        "  ROUND(\n",
+        "    (b.Rozwarstwienie_Pct - s.min_inequality) / (s.max_inequality - s.min_inequality),\n",
+        "    4\n",
+        "  ) AS Rozwarstwienie_Normalized,\n",
+        "  -- Min-Max normalization (0-1) for Happiness_Score\n",
+        "  ROUND(\n",
+        "    (b.Happiness_Score - s.min_happiness) / (s.max_happiness - s.min_happiness),\n",
+        "    4\n",
+        "  ) AS Happiness_Normalized,\n",
+        "  -- Min-Max normalization (0-100) for easier interpretation\n",
+        "  ROUND(\n",
+        "    ((b.Rozwarstwienie_Pct - s.min_inequality) / (s.max_inequality - s.min_inequality)) * 100,\n",
+        "    2\n",
+        "  ) AS Rozwarstwienie_Normalized_Pct,\n",
+        "  ROUND(\n",
+        "    ((b.Happiness_Score - s.min_happiness) / (s.max_happiness - s.min_happiness)) * 100,\n",
+        "    2\n",
+        "  ) AS Happiness_Normalized_Pct\n",
+        "FROM\n",
+        "  base_data b CROSS JOIN stats s\n",
+        "ORDER BY\n",
+        "  b.Rozwarstwienie_Pct DESC"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "756ffda0",
+      "displayName": "Dashboard",
+      "layout": [
+        {
+          "widget": {
+            "name": "income_inequality_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "income_inequality",
+                  "fields": [
+                    {
+                      "name": "Kod_Kraju",
+                      "expression": "`Kod_Kraju`"
+                    },
+                    {
+                      "name": "sum(Rozwarstwienie_Pct)",
+                      "expression": "SUM(`Rozwarstwienie_Pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Income Inequality by Country (2022)",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Kod_Kraju",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(Rozwarstwienie_Pct)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "r1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "b082f979",
+                  "fields": [
+                    {
+                      "name": "Kod_Kraju",
+                      "expression": "`Kod_Kraju`"
+                    },
+                    {
+                      "name": "Rozwarstwienie_Pct",
+                      "expression": "`Rozwarstwienie_Pct`"
+                    },
+                    {
+                      "name": "Happiness_Score",
+                      "expression": "`Happiness_Score`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showDescription": false,
+                "showTitle": true,
+                "title": "Korelacja rozwarstwienia płacowego z odczuwalnym szczęsciem"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 1
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ],
+                "layout": "group"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Kod_Kraju",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y"
+                    }
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative",
+                    "reverse": false
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "Rozwarstwienie_Pct",
+                      "displayName": "rozwarstwienie płacowe"
+                    },
+                    {
+                      "fieldName": "Happiness_Score",
+                      "displayName": "szczęsice"
+                    }
+                  ],
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    },
+                    "hideGroupSeparator": true
+                  }
+                },
+                "color": {
+                  "legend": {
+                    "position": "bottom"
+                  }
+                },
+                "label": {
+                  "show": false
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 12,
+            "height": 8
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
